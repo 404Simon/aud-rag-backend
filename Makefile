@@ -21,6 +21,12 @@ venv:
 install: venv
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
+	@if ! test -d $(VENV_DIR)/lib/python3.12/site-packages/de_core_news_sm; then \
+	    $(PYTHON) -m spacy download de_core_news_sm; \
+	fi
+	@if ! test -d ~/.cache/huggingface/hub/models--sentence-transformers--distiluse-base-multilingual-cased-v1; then \
+	    $(PYTHON) -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('distiluse-base-multilingual-cased-v1')"; \
+	fi
 
 run: install docker-up
 	uvicorn $(APP_MODULE):$(APP_INSTANCE) --host $(HOST) --port $(PORT) --reload
@@ -38,4 +44,7 @@ docker-up:
 
 docker-down:
 	$(DOCKER_COMPOSE) -f "$(DOCKER_COMPOSE_FILE)" down
+
+ingest:
+	$(PYTHON) app/scripts/ingest_data.py
 

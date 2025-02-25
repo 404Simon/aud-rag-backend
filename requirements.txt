@@ -1,4 +1,7 @@
-fastapi
+psycopg2-binary
+PyPDF2
+spacy
+pgvector
 uvicorn
 sqlalchemy
 psycopg2-binary
@@ -6,3 +9,7 @@ pydantic
 pydantic-settings
 openai
 pinecone-client
+ell-ai[all]
+sentence-transformers
+fastapi
+python-pptx
