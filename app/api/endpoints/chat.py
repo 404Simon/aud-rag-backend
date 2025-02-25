@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from app.schemas import chat as chat_schemas
 from app.db.database import get_db
 from app.tasks import rag_tasks
-from ...core.rag.rag_pipeline import run_multi_stage_rag
+from app.core.rag.rag_pipeline import run_multi_stage_rag
+from app.db import models
 
 router = APIRouter()
 
@@ -28,11 +29,28 @@ async def send_message(chat_id: str, request: chat_schemas.SendMessageRequest, b
     background_tasks.add_task(run_multi_stage_rag, chat_id, request.user_message, db=db)
     return {"status": "message received, processing"}
 
+
 @router.get("/{chat_id}/poll", response_model=chat_schemas.PollResponse)
 async def poll_messages(chat_id: str, db: Session = Depends(get_db)):
     db_chat_session = rag_tasks.get_chat_session_db(db, chat_id)
     if not db_chat_session:
         raise HTTPException(status_code=404, detail="Chat session not found")
-    messages, status = rag_tasks.poll_new_messages_db(db, chat_id)
-    return chat_schemas.PollResponse(messages=messages, status=status)
-
+    
+    messages_out = []
+    for msg in db_chat_session.messages:
+        chunks = []
+        if msg.role == models.MessageRole.RAG_CHUNKS and msg.slide_chunks:
+            for chunk in msg.slide_chunks:
+                chunks.append({
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "page_number": chunk.page_number,
+                    "pdf_filename": chunk.pdf_filename,
+                })
+        messages_out.append({
+            "text": msg.text,
+            "role": msg.role,
+            "similar_chunks": chunks,
+        })
+    
+    return chat_schemas.PollResponse(messages=messages_out, status=db_chat_session.status)

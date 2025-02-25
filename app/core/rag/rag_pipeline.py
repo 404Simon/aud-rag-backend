@@ -1,10 +1,17 @@
 from sqlalchemy.orm import Session
 from app.db import models
 from app.db.models import ChatSessionStatus
+from app.core.rag.relevant_topics import find_relevant_topics, RelevantTopics
+from app.core.rag.vectorstore import query_similar_chunks
 import asyncio
 
+
 async def run_multi_stage_rag(chat_session_id: str, user_message: str, db: Session):
-    db_chat_session = db.query(models.DBChatSession).filter(models.DBChatSession.id == chat_session_id).first()
+    db_chat_session = (
+        db.query(models.DBChatSession)
+        .filter(models.DBChatSession.id == chat_session_id)
+        .first()
+    )
     if not db_chat_session:
         print(f"Chat session {chat_session_id} not found in RAG task.")
         return
@@ -12,26 +19,34 @@ async def run_multi_stage_rag(chat_session_id: str, user_message: str, db: Sessi
     db_chat_session.status = ChatSessionStatus.GENERATING
     db.commit()
 
-    try:
-        await asyncio.sleep(1)
-        db_message1 = models.DBMessage(chat_session_id=chat_session_id, text="Stage 1 of response...", is_user=False)
-        db.add(db_message1)
-        db.commit()
+    relevant_topics: RelevantTopics = find_relevant_topics(user_message).parsed
+    filter_patterns = relevant_topics.get_document_title_filterpatterns()
+    filter_patterns_message = models.DBMessage(
+        chat_session_id=chat_session_id,
+        text=f"Filterpatterns: {str(filter_patterns)}",
+        role=models.MessageRole.FILTER_PATTERNS,
+    )
+    db.add(filter_patterns_message)
+    db.commit()
 
-        await asyncio.sleep(2)
-        db_message2 = models.DBMessage(chat_session_id=chat_session_id, text="Stage 2 with more details...", is_user=False)
-        db.add(db_message2)
-        db.commit()
+    similar_chunks = query_similar_chunks(
+        db,
+        user_message,
+        top_k=5,
+        document_title_filter_patterns=filter_patterns,
+    )
 
-        await asyncio.sleep(1)
-        db_message3 = models.DBMessage(chat_session_id=chat_session_id, text="Final stage of response. Done.", is_user=False)
-        db.add(db_message3)
-        db.commit()
+    similar_chunks_message = models.DBMessage(
+        chat_session_id=chat_session_id,
+        text="Similar chunks attached",
+        role=models.MessageRole.RAG_CHUNKS,
+    )
+    db.add(similar_chunks_message)
+    db.commit()
 
-        db_chat_session.status = ChatSessionStatus.DONE
-        db.commit()
+    for chunk in similar_chunks:
+        similar_chunks_message.slide_chunks.append(chunk)
+    db.commit()
 
-    except Exception as e:
-        print(f"Error in RAG task for session {chat_session_id}: {e}")
-        db_chat_session.status = ChatSessionStatus.ERROR
-        db.commit()
+    db_chat_session.status = ChatSessionStatus.DONE
+    db.commit()

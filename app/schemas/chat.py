@@ -1,9 +1,16 @@
 from pydantic import BaseModel
 from typing import List
 
+class SlideChunkOut(BaseModel):
+    id: int
+    content: str
+    page_number: int
+    pdf_filename: str
+
 class Message(BaseModel):
     text: str
-    is_user: bool
+    role: str
+    similar_chunks: List[SlideChunkOut] = []
 
 class StartChatRequest(BaseModel):
     initial_message: str
